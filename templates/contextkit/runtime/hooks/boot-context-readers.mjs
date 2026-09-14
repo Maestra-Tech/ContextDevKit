@@ -7,7 +7,7 @@
  */
 import { readdir, readFile, stat } from 'node:fs/promises';
 import { resolve } from 'node:path';
-import { CHANGELOG, pathsFor } from '../config/paths.mjs';
+import { CHANGELOG, MEMORY_DIR, pathsFor } from '../config/paths.mjs';
 import { parseSessionLog, renderDigest } from './session-digest-core.mjs';
 import { clip, stripMd } from './md-extract.mjs';
 import {
@@ -196,4 +196,53 @@ export async function readChangelog(root) {
 
 export async function readSessionsIndex(root) {
   return readFile(pathsFor(root).sessionsIndex, 'utf-8').catch(() => null);
+}
+
+/** Personalization Markdown relative to the memory root (installer-owned name). */
+const PERSONALIZATION_RELATIVE = 'preferences/personalization.md';
+/** Placeholder the installer seeds; a file that still carries it holds no owner text. */
+const PERSONALIZATION_PLACEHOLDER = '_Add project-specific instructions here._';
+const OWNER_GUIDANCE_HEADING_LIMIT = 24;
+
+/**
+ * Renders explicit owner preferences and the personalization pointer as one
+ * recommendation-only block for session context (ADR-0165). Inferred preferences
+ * are omitted: only explicit owner guidance earns a place in the agent's context.
+ * Never throws; returns null when neither source has content.
+ *
+ * @param {string} root project root
+ * @returns {Promise<string|null>} Markdown block or null
+ */
+export async function renderOwnerGuidance(root) {
+  const lines = [];
+  try {
+    const personalization = await readFile(resolve(root, MEMORY_DIR, PERSONALIZATION_RELATIVE), 'utf-8').catch(() => null);
+    if (personalization && !personalization.includes(PERSONALIZATION_PLACEHOLDER)) {
+      const headings = personalization
+        .split(/\r?\n/)
+        .filter((line) => /^###?\s+\S/.test(line))
+        .map((line) => stripMd(line.replace(/^#+\s+/, '')))
+        .slice(0, OWNER_GUIDANCE_HEADING_LIMIT);
+      const lineCount = personalization.split(/\r?\n/).length;
+      lines.push(`- personalization: \`${MEMORY_DIR}/${PERSONALIZATION_RELATIVE}\` (${lineCount} lines; read before any mutation)`);
+      if (headings.length > 0) lines.push(`  - sections: ${headings.join(' · ')}`);
+    }
+  } catch {
+    /* pointer is optional */
+  }
+  try {
+    const { listOwnerPreferences } = await import('../preferences/owner-preferences.mjs');
+    const store = listOwnerPreferences(root);
+    const explicit = (store.preferences ?? []).filter((preference) => preference.source === 'explicit');
+    if (store.status === 'unavailable') {
+      lines.push(`- preferences: store unavailable (${clip(String(store.diagnostic ?? 'invalid'), 80)}); not repaired`);
+    } else if (explicit.length > 0) {
+      lines.push(`- preferences (explicit, revision ${store.revision}, ${store.authority}):`);
+      for (const preference of explicit) lines.push(`  - ${preference.key}: ${clip(String(preference.value), 160)}`);
+    }
+  } catch {
+    /* preferences are optional */
+  }
+  if (lines.length === 0) return null;
+  return ['## Owner guidance (recommendation-only)', ...lines].join('\n');
 }

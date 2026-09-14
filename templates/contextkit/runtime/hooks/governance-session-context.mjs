@@ -9,7 +9,12 @@ import {
   readGovernancePayload,
   resolveGovernanceHost,
 } from './governance-host-io.mjs';
-import { digestLatestSession, readGovernedWorkflowContext, renderGovernedWorkflowContext } from './boot-context-readers.mjs';
+import {
+  digestLatestSession,
+  readGovernedWorkflowContext,
+  renderGovernedWorkflowContext,
+  renderOwnerGuidance,
+} from './boot-context-readers.mjs';
 
 /**
  * Loads the active workflow pack without consulting a legacy authority.
@@ -37,6 +42,10 @@ export async function loadGovernanceSessionContext(rawPayload, {
     const latestSession = await digestLatestSession(root);
     contextPack = latestSession?.governedContextText ?? null;
   }
+  // ADR-0165: explicit owner guidance travels with every context event so the
+  // written preferences stop being inert prose. Recommendation-only by contract.
+  const ownerGuidance = await renderOwnerGuidance(root);
+  if (ownerGuidance) contextPack = contextPack ? `${contextPack}\n\n${ownerGuidance}` : ownerGuidance;
 
   return {
     schemaVersion: 'governance-context/1',

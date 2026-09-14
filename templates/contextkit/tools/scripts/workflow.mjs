@@ -118,7 +118,10 @@ function run() {
   }
   if (command === 'advance') {
     const [ref] = positional();
-    const workflow = advanceWorkflow(ROOT, ref, arg('ref'), { now: new Date().toISOString() });
+    const workflow = advanceWorkflow(ROOT, ref, arg('ref'), {
+      now: new Date().toISOString(),
+      force: process.argv.includes('--force'),
+    });
     printWorkflow(workflow);
     return;
   }
@@ -130,6 +133,8 @@ function run() {
       qaStatus: arg('qa-status'),
       qaEvidenceRefs,
       reportRef: arg('ref'),
+      reviewer: arg('reviewer'),
+      author: arg('author') || undefined,
     }, {
       expectedRevision: requiredRevisionArg(),
       now: new Date().toISOString(),

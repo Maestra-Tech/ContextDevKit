@@ -8,6 +8,7 @@
 import { existsSync, readFileSync, statSync } from 'node:fs';
 import { isAbsolute, join, normalize, relative } from 'node:path';
 import { validateTasksDocument } from '../tasks-validate.mjs';
+import { validateProofOfDoneItems } from './proof-of-done.mjs';
 import {
   CONTEXT_MANIFEST_SCHEMA_VERSION,
   optionalContextFiles,
@@ -188,6 +189,21 @@ export function validateWorkflowState(state) {
     errors.push(fail('invalid-qa', 'qa must contain a supported status and evidenceRefs array', 'workflow-state.json.qa'));
   } else {
     validateStringArray(state.qa.evidenceRefs, 'workflow-state.json.qa.evidenceRefs', errors);
+    // ADR-0165 completion receipt fields are optional (older packs) but never malformed.
+    for (const field of ['reviewer', 'author']) {
+      if (state.qa[field] !== undefined && !isNonEmptyString(state.qa[field])) {
+        errors.push(fail('invalid-qa', `qa.${field} must be a non-empty string when present`, `workflow-state.json.qa.${field}`));
+      }
+    }
+    if (isNonEmptyString(state.qa.reviewer) && isNonEmptyString(state.qa.author)
+      && state.qa.reviewer.trim().toLowerCase() === state.qa.author.trim().toLowerCase()) {
+      errors.push(fail('invalid-qa', 'qa.reviewer must differ from qa.author', 'workflow-state.json.qa.reviewer'));
+    }
+    if (state.qa.proofOfDone !== undefined) {
+      for (const message of validateProofOfDoneItems(state.qa.proofOfDone)) {
+        errors.push(fail('invalid-qa', message, 'workflow-state.json.qa.proofOfDone'));
+      }
+    }
   }
   if (!(state.lastReportRef === null || isNonEmptyString(state.lastReportRef))) errors.push(fail('invalid-reference', 'lastReportRef must be null or a non-empty string', 'workflow-state.json.lastReportRef'));
   for (const field of ['startedAt', 'updatedAt', 'completedAt']) {

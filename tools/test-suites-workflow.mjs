@@ -13,6 +13,7 @@ export const WORKFLOW_ENGINE_SUITES = Object.freeze([
       `${WORKFLOW_DIR}/files.mjs`, `${WORKFLOW_DIR}/io.mjs`,
       `${WORKFLOW_DIR}/patterns.mjs`, `${WORKFLOW_DIR}/profiles.mjs`,
       `${WORKFLOW_DIR}/render.mjs`, `${WORKFLOW_DIR}/validate.mjs`,
+      `${WORKFLOW_DIR}/proof-of-done.mjs`, 'templates/contextkit/tools/scripts/workflow-gate.mjs',
       'templates/contextkit/tools/scripts/tasks-store.mjs',
     ],
   },

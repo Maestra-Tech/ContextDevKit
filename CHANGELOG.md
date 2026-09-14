@@ -20,7 +20,34 @@ this project follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
-_Add your changes here._
+### Added (`feat`)
+
+- **`feat(governance)` — gate verdicts can speak.** `evaluateGateObservation`
+  copies an observation's `visibleMessage` and `problemKey` onto `warn`/`deny`
+  verdicts only, so the event runtime finally renders gate messages to the agent.
+  Passing, silent, and shadow verdicts never carry text. (ADR-0165, WF-0118)
+- **`feat(governance)` — impact analysis before writing a risky path.** Write
+  preflight produces the `simulation` observation when an Edit/Write/MultiEdit/
+  NotebookEdit targets `l5.highRiskPaths` or `l5.contractGlobs`; a prediction
+  from `mark-simulation.mjs` covering the path for the current session (or dated
+  today) satisfies it. Canary, never a block. New
+  `runtime/hooks/write-risk-observation.mjs`.
+- **`feat(context)` — owner guidance in session context.** SessionStart,
+  PreCompact, and SubagentStart context ends with an `Owner guidance
+  (recommendation-only)` block: explicit `owner-preferences.json` entries and a
+  pointer to `personalization.md` with its section headings. The preference store
+  had no runtime consumer until now.
+- **`feat(workflow)` — structured SPEC and document gates.** New workflows seed
+  `spec.md` with Problem, Expected behavior, Domain rules and invariants, Data,
+  Interfaces and contracts, Edge cases, Acceptance criteria, Expected tests,
+  Impact analysis, Development sequence. `advance` refuses to leave `prd`/`spec`
+  with empty required sections unless `--force`; the leave-gate in
+  `workflow-gate.mjs` is wired for the first time.
+- **`feat(workflow)` — completion receipt with reviewer and proof of done.**
+  `complete` requires `--reviewer` (distinct from `--author`) and a fenced
+  ` ```proof-of-done ` block of twelve `passed|skipped <reason>` items in the
+  closeout report; both persist in `workflow-state.json.qa`. New
+  `tools/scripts/workflow/proof-of-done.mjs`.
 
 ## [4.0.5] - 2026-08-11
 

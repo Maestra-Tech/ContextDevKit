@@ -48,6 +48,45 @@ function check(condition, success, failure = success) {
   condition ? rep.ok(success) : rep.bad(failure);
 }
 
+/** Complete ADR-0165 proof-of-done block for closeout report fixtures. */
+const PROOF_BLOCK = [
+  '```proof-of-done',
+  'typecheck: passed tsc --noEmit exit 0',
+  'lint: passed eslint exit 0',
+  'affected-tests: passed vitest run exit 0',
+  'regression: skipped no shared module touched',
+  'migrations: skipped no schema change',
+  'runtime-check: passed local stack booted',
+  'logs-sanitized: passed no PII fields',
+  'main-flow: passed create -> read -> complete',
+  'edge-cases: passed empty, duplicate, out-of-order',
+  'acceptance-review: passed AC1-AC5 checked',
+  'diff-review: passed full diff read',
+  'architecture-review: passed no duplicated authority',
+  '```',
+].join('\n');
+
+/** Fill every phase-gated section so `advance` may leave prd and spec. */
+function fillAuthoredDocuments(directory) {
+  writeFileSync(join(directory, 'prd.md'), '# PRD/PDR — fixture\n\n## Problem\n\nSomething.\n\n## Goals\n\nProve it.\n', 'utf8');
+  writeFileSync(join(directory, 'spec.md'), [
+    '# SPEC — fixture',
+    '',
+    ...['Problem', 'Expected behavior', 'Domain rules and invariants', 'Data', 'Interfaces and contracts', 'Edge cases', 'Acceptance criteria', 'Expected tests']
+      .flatMap((heading) => [`## ${heading}`, '', `${heading} content.`, '']),
+  ].join('\n'), 'utf8');
+}
+
+/** Advance until conclusion, filling documents once so the phase gates pass. */
+function advanceToConclusion(workflowRoot, workflowId, directory, now) {
+  fillAuthoredDocuments(directory);
+  let cursor = readWorkflow(workflowRoot, workflowId);
+  while (cursor.currentPhase !== 'conclusion') {
+    cursor = advanceWorkflow(workflowRoot, workflowId, '', { now, expectedRevision: cursor.revision });
+  }
+  return cursor;
+}
+
 try {
   check(!existsSync(join(root, '.git')), 'fixture is genuinely non-Git');
 
@@ -97,8 +136,13 @@ try {
   const secondRender = renderWorkflowPack(created.dir);
   check(!secondRender.tasksChanged && !secondRender.indexChanged && !secondRender.continuationChanged, 'second re-render remains a no-op');
 
-  writeFileSync(join(created.dir, 'reports', '0001.md'), '# Report\n\nTests passed.\n', 'utf8');
+  writeFileSync(join(created.dir, 'reports', '0001.md'), `# Report\n\nTests passed.\n\n${PROOF_BLOCK}\n`, 'utf8');
   const loaded = loadWorkflowPack(root, 'WF-0042');
+  check(
+    ['## Problem', '## Expected behavior', '## Domain rules and invariants', '## Data', '## Interfaces and contracts', '## Edge cases', '## Acceptance criteria', '## Expected tests', '## Impact analysis', '## Development sequence']
+      .every((heading) => loaded.documents.spec.includes(`${heading}\n`)),
+    'fresh spec.md seeds the ADR-0165 method sections',
+  );
   check(typeof loaded.documents.continuation === 'string' && loaded.documents.continuation === initialContinuation, 'read-only loader requires and returns the generated continuation prompt');
   check(loaded.definition.id === loaded.state.workflowId && loaded.tasks.scopeRef === loaded.definition.id, 'create → read preserves cross-file identity');
   check(loaded.documents.prd.includes('# PRD/PDR') && loaded.documents.spec.includes('# SPEC') && loaded.documents.decisions.includes('# Decisions'), 'read-only loader includes governed document contents');
@@ -185,7 +229,26 @@ try {
   }
   check(earlyCompletionRefused, 'workflow completion refuses before the conclusion phase');
 
-  let phaseCursor = advanced;
+  let emptyPrdRefused = '';
+  try {
+    advanceWorkflow(root, 'WF-0042', '', { now: '2026-08-08T12:02:30.000Z', expectedRevision: advanced.revision });
+  } catch (error) {
+    emptyPrdRefused = error.message;
+  }
+  check(/prd cannot advance/.test(emptyPrdRefused) && /"## Problem"/.test(emptyPrdRefused) && /"## Goals"/.test(emptyPrdRefused), 'advance refuses to leave prd while Problem and Goals are empty, naming them');
+  writeFileSync(join(created.dir, 'prd.md'), '# PRD/PDR — fixture\n\n## Problem\n\nSomething.\n\n## Goals\n\nProve it.\n', 'utf8');
+  let phaseCursor = advanceWorkflow(root, 'WF-0042', '', { now: '2026-08-08T12:02:40.000Z', expectedRevision: advanced.revision });
+  check(phaseCursor.currentPhase === 'spec', 'filled prd leaves the phase without --force');
+  let emptySpecRefused = '';
+  try {
+    advanceWorkflow(root, 'WF-0042', '', { now: '2026-08-08T12:02:50.000Z', expectedRevision: phaseCursor.revision });
+  } catch (error) {
+    emptySpecRefused = error.message;
+  }
+  check(/spec cannot advance/.test(emptySpecRefused) && /"## Expected behavior"/.test(emptySpecRefused) && /"## Expected tests"/.test(emptySpecRefused), 'advance refuses to leave spec while method sections are empty, naming them');
+  const forcedSpec = advanceWorkflow(root, 'WF-0042', '', { now: '2026-08-08T12:02:55.000Z', expectedRevision: phaseCursor.revision, force: true });
+  check(forcedSpec.currentPhase === 'adr', 'explicit --force is the only bypass of the document gate');
+  phaseCursor = forcedSpec;
   while (phaseCursor.currentPhase !== 'conclusion') {
     phaseCursor = advanceWorkflow(root, 'WF-0042', '', {
       now: '2026-08-08T12:03:00.000Z',
@@ -196,13 +259,46 @@ try {
     qaStatus: 'passed',
     qaEvidenceRefs: ['runs/final-suite.json'],
     reportRef: 'reports/0001.md',
+    reviewer: 'reviewer-agent',
+    author: 'author-agent',
   };
+  const completionRefusals = [];
+  for (const [label, input, pattern] of [
+    ['missing reviewer', { ...completionInput, reviewer: undefined }, /requires a reviewer/],
+    ['reviewer equals author', { ...completionInput, reviewer: 'Author-Agent' }, /different from the author/],
+  ]) {
+    try {
+      completeWorkflow(root, 'WF-0042', input, { now: '2026-08-08T12:03:30.000Z', expectedRevision: phaseCursor.revision });
+      completionRefusals.push(`${label}: not refused`);
+    } catch (error) {
+      if (!pattern.test(error.message)) completionRefusals.push(`${label}: ${error.message}`);
+    }
+  }
+  writeFileSync(join(created.dir, 'reports', '0002.md'), '# Report without proof\n\n```proof-of-done\ntypecheck: passed\nlint: failed eslint exit 1\nregression: skipped\n```\n', 'utf8');
+  try {
+    completeWorkflow(root, 'WF-0042', { ...completionInput, reportRef: 'reports/0002.md' }, { now: '2026-08-08T12:03:40.000Z', expectedRevision: phaseCursor.revision });
+    completionRefusals.push('incomplete proof: not refused');
+  } catch (error) {
+    if (!/proof-of-done/.test(error.message) || !/"lint" failed: eslint exit 1/.test(error.message) || !/"regression" skipped without a reason/.test(error.message) || !/missing items: .*affected-tests/.test(error.message)) {
+      completionRefusals.push(`incomplete proof: ${error.message}`);
+    }
+  }
+  rmSync(join(created.dir, 'reports', '0002.md'));
+  check(completionRefusals.length === 0, 'completion refuses a missing reviewer, an author reviewing their own work, and an incomplete proof-of-done', `completion refusals drifted: ${completionRefusals.join(' | ')}`);
   const completed = completeWorkflow(root, 'WF-0042', completionInput, {
     now: '2026-08-08T12:04:00.000Z',
     expectedRevision: phaseCursor.revision,
   });
   check(completed.status === 'done' && completed.currentPhase === 'conclusion', 'explicit completion transitions conclusion to done');
   check(completed.state.qa.status === 'passed' && completed.state.qa.evidenceRefs[0] === 'runs/final-suite.json', 'completion persists explicit QA evidence');
+  check(
+    completed.state.qa.reviewer === 'reviewer-agent'
+      && completed.state.qa.author === 'author-agent'
+      && Object.keys(completed.state.qa.proofOfDone ?? {}).length === 12
+      && completed.state.qa.proofOfDone.regression.status === 'skipped'
+      && completed.state.qa.proofOfDone.regression.note === 'no shared module touched',
+    'completion persists the reviewer and the parsed proof-of-done items',
+  );
   check(completed.state.activeTaskIds.length === 0 && completed.state.lastReportRef === 'reports/0001.md', 'completion clears active tasks and binds the factual report');
   check(completed.dir === join(neutralDoneRoot, 'WF-0042-portable-flow'), 'neutral completion moves the whole package under workflows/done');
   check(!existsSync(created.dir) && existsSync(completed.dir), 'completion removes the active placement and publishes the completed placement');
@@ -255,14 +351,8 @@ try {
     objective: 'Prove target collision is preflighted',
     now: NOW,
   });
-  writeFileSync(join(collision.dir, 'reports', '0001.md'), '# Collision report\n', 'utf8');
-  let collisionCursor = readWorkflow(root, collision.id);
-  while (collisionCursor.currentPhase !== 'conclusion') {
-    collisionCursor = advanceWorkflow(root, collision.id, '', {
-      now: '2026-08-08T12:05:00.000Z',
-      expectedRevision: collisionCursor.revision,
-    });
-  }
+  writeFileSync(join(collision.dir, 'reports', '0001.md'), `# Collision report\n\n${PROOF_BLOCK}\n`, 'utf8');
+  const collisionCursor = advanceToConclusion(root, collision.id, collision.dir, '2026-08-08T12:05:00.000Z');
   const collisionTarget = join(neutralDoneRoot, 'WF-0044-collision');
   mkdirSync(collisionTarget);
   const collisionStateBefore = readFileSync(join(collision.dir, 'workflow-state.json'), 'utf8');
@@ -295,14 +385,8 @@ try {
   });
   const ownerDoneRoot = join(operationDirectory, 'done');
   check(existsSync(ownerDoneRoot), 'owner-scoped workflow creation guarantees the owner done directory');
-  writeFileSync(join(owned.dir, 'reports', '0001.md'), '# Owner report\n', 'utf8');
-  let ownerCursor = readWorkflow(root, owned.id);
-  while (ownerCursor.currentPhase !== 'conclusion') {
-    ownerCursor = advanceWorkflow(root, owned.id, '', {
-      now: '2026-08-08T12:07:00.000Z',
-      expectedRevision: ownerCursor.revision,
-    });
-  }
+  writeFileSync(join(owned.dir, 'reports', '0001.md'), `# Owner report\n\n${PROOF_BLOCK}\n`, 'utf8');
+  const ownerCursor = advanceToConclusion(root, owned.id, owned.dir, '2026-08-08T12:07:00.000Z');
   const ownedCompleted = completeWorkflow(root, owned.id, completionInput, {
     now: '2026-08-08T12:08:00.000Z',
     expectedRevision: ownerCursor.revision,
@@ -352,6 +436,7 @@ try {
     recloseCursor = advanceWorkflow(root, owned.id, '', {
       now: '2026-08-08T12:09:00.000Z',
       expectedRevision: recloseCursor.revision,
+      force: true,
     });
   }
   const reclosedOwned = completeWorkflow(root, owned.id, {
@@ -389,9 +474,20 @@ try {
     '--qa-status', 'passed',
     '--qa-evidence', 'runs/final-suite.json',
     '--ref', 'reports/0001.md',
+    '--reviewer', 'reviewer-agent',
+    '--author', 'author-agent',
     '--expected-revision', String(completed.revision),
   ], { cwd: root, encoding: 'utf8' });
   check(cliCompletion.status === 0 && cliCompletion.stdout.includes('done/conclusion'), 'v2 CLI completes idempotently with explicit QA evidence and CAS');
+  const cliSelfReview = spawnSync(process.execPath, [
+    cli, 'complete', 'WF-0042',
+    '--qa-status', 'passed',
+    '--qa-evidence', 'runs/final-suite.json',
+    '--ref', 'reports/0001.md',
+    '--reviewer', 'author-agent',
+    '--expected-revision', String(completed.revision),
+  ], { cwd: root, encoding: 'utf8' });
+  check(cliSelfReview.status !== 0 && /different QA evidence/.test(cliSelfReview.stderr), 'v2 CLI refuses to re-close a done workflow under a different reviewer');
 } finally {
   rmSync(tempBase, { recursive: true, force: true });
 }

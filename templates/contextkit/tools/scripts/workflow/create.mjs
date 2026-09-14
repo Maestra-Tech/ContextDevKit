@@ -20,6 +20,7 @@ import { basename, dirname, isAbsolute, join, relative, resolve } from 'node:pat
 import { pathsFor } from '../../../runtime/config/paths.mjs';
 import { createTasksDocument } from '../tasks-schema.mjs';
 import { assertTasksDocument } from '../tasks-validate.mjs';
+import { PRD_SEED_SECTIONS, SPEC_SEED_SECTIONS } from './catalog.mjs';
 import {
   CONTEXT_MANIFEST_SCHEMA_VERSION,
   optionalContextFiles,
@@ -223,8 +224,8 @@ function writeInitialPack(stagingDirectory, definition, options) {
   const tasks = assertTasksDocument(createTasksDocument(definition.id, { tasks: options.tasks ?? [] }));
   writeJsonStable(join(stagingDirectory, 'pipeline', 'tasks.json'), tasks);
   writeJsonStable(join(stagingDirectory, 'context-manifest.json'), createContextManifest(definition.id));
-  writeFileAtomicSync(join(stagingDirectory, 'prd.md'), authoredDocument(`PRD/PDR — ${definition.title}`, ['Problem', 'Goals', 'Users / Jobs', 'Non-goals', 'Success metrics', 'Open questions']));
-  writeFileAtomicSync(join(stagingDirectory, 'spec.md'), authoredDocument(`SPEC — ${definition.title}`, ['Executive summary', 'Current architecture', 'Proposed design', 'Interfaces / contracts', 'Data flow', 'Impact analysis', 'Test plan', 'Development sequence']));
+  writeFileAtomicSync(join(stagingDirectory, 'prd.md'), authoredDocument(`PRD/PDR — ${definition.title}`, PRD_SEED_SECTIONS));
+  writeFileAtomicSync(join(stagingDirectory, 'spec.md'), authoredDocument(`SPEC — ${definition.title}`, SPEC_SEED_SECTIONS));
   writeFileAtomicSync(join(stagingDirectory, 'decisions.md'), `# Decisions — ${definition.title}\n\nReference accepted ADRs here; do not duplicate their content.\n\n| Decision | Status | Relevance |\n| --- | --- | --- |\n`);
   renderWorkflowPack(stagingDirectory);
 }
@@ -399,8 +400,8 @@ function fillMissingScaffold(stagingDirectory, definition, now) {
   if (contextManifestRequiresRepair(stagingDirectory, definition.id)) {
     writeJsonStable(join(stagingDirectory, 'context-manifest.json'), createContextManifest(definition.id));
   }
-  if (!existsSync(join(stagingDirectory, 'prd.md'))) writeFileAtomicSync(join(stagingDirectory, 'prd.md'), authoredDocument(`PRD/PDR — ${definition.title}`, ['Problem', 'Goals', 'Users / Jobs', 'Non-goals', 'Success metrics', 'Open questions']));
-  if (!existsSync(join(stagingDirectory, 'spec.md'))) writeFileAtomicSync(join(stagingDirectory, 'spec.md'), authoredDocument(`SPEC — ${definition.title}`, ['Executive summary', 'Current architecture', 'Proposed design', 'Interfaces / contracts', 'Data flow', 'Impact analysis', 'Test plan', 'Development sequence']));
+  if (!existsSync(join(stagingDirectory, 'prd.md'))) writeFileAtomicSync(join(stagingDirectory, 'prd.md'), authoredDocument(`PRD/PDR — ${definition.title}`, PRD_SEED_SECTIONS));
+  if (!existsSync(join(stagingDirectory, 'spec.md'))) writeFileAtomicSync(join(stagingDirectory, 'spec.md'), authoredDocument(`SPEC — ${definition.title}`, SPEC_SEED_SECTIONS));
   if (!existsSync(join(stagingDirectory, 'decisions.md'))) writeFileAtomicSync(join(stagingDirectory, 'decisions.md'), `# Decisions — ${definition.title}\n\nReference accepted ADRs here; do not duplicate their content.\n`);
   renderWorkflowPack(stagingDirectory);
 }

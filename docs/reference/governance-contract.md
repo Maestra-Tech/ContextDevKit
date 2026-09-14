@@ -124,6 +124,27 @@ simulation, deliberation, agent/model routing, specialist selection, swarm
 shape, economy, and owner preferences may recommend. Their absence or error
 does not deny work. `privacy-lgpd` is shadow-only.
 
+## Visible messages
+
+A gate speaks only through its observation. An observation may carry
+`visibleMessage` and `problemKey`; the policy point copies both onto a `warn`
+or `deny` verdict and never onto `allow` or `silent`, so a passing or shadow gate
+leaks no text. The event runtime renders one message per session per
+`problemKey` as `{ gateId, problemKey, level: warning | error, text }`.
+
+Two observation producers ship with the runtime:
+
+- `write-preflight` computes `simulation` when a file-writing tool targets a path
+  matching `l5.highRiskPaths` or `l5.contractGlobs`: `passed` when a prediction
+  under `memory/predictions/` covers the path for the current session (or was
+  written today), otherwise `violated` with a message naming the path and the
+  `mark-simulation.mjs` command. Paths outside the configured lists produce no
+  observation, and the gate stays canary.
+- Session, compaction, and handoff context ends with an `Owner guidance
+  (recommendation-only)` block listing explicit owner preferences and the
+  personalization file. Inferred preferences are never shown, and the block
+  never authorizes work.
+
 ## Risk acknowledgement
 
 Destructive production action, force-push, and secret rotation may produce a

@@ -74,6 +74,29 @@ try {
   gateMode.evaluateGateObservation({ gate: shadowGate, moment: 'postflight', observation: qaViolation }).decision === 'silent'
     ? rep.ok('E13 shadow stays silent') : rep.bad('E13 shadow surfaced or blocked');
 
+  // ADR-0165: observations may speak; only warn/deny verdicts carry the text.
+  const simulationGate = gateMode.resolveGateMode(defaults.DEFAULT_CONFIG, 'simulation');
+  const spokenViolation = {
+    status: 'violated', deterministic: true, applicable: true, evidenced: true,
+    visibleMessage: '  Impact analysis before write: src/domain/x.ts  ', problemKey: 'simulation:src/domain/',
+  };
+  const spokenWarn = gateMode.evaluateGateObservation({ gate: simulationGate, moment: 'write-preflight', observation: spokenViolation });
+  spokenWarn.decision === 'warn'
+    && spokenWarn.visibleMessage === 'Impact analysis before write: src/domain/x.ts'
+    && spokenWarn.problemKey === 'simulation:src/domain/'
+    ? rep.ok('E14 warn verdict carries the observation visibleMessage and problemKey')
+    : rep.bad(`E14 warn verdict lost its message: ${JSON.stringify(spokenWarn)}`);
+  const spokenPass = gateMode.evaluateGateObservation({
+    gate: simulationGate, moment: 'write-preflight', observation: { ...spokenViolation, status: 'passed' },
+  });
+  spokenPass.decision === 'allow' && !('visibleMessage' in spokenPass) && !('problemKey' in spokenPass)
+    ? rep.ok('E15 passing verdict never leaks observation text')
+    : rep.bad(`E15 passing verdict leaked text: ${JSON.stringify(spokenPass)}`);
+  const shadowSpoken = gateMode.evaluateGateObservation({ gate: shadowGate, moment: 'postflight', observation: spokenViolation });
+  shadowSpoken.decision === 'silent' && !('visibleMessage' in shadowSpoken)
+    ? rep.ok('E16 shadow verdict stays silent even with a spoken observation')
+    : rep.bad(`E16 shadow verdict surfaced text: ${JSON.stringify(shadowSpoken)}`);
+
   const override = gateMode.buildHumanOverrideMetadata('qa-signoff', {
     actor: 'owner', reason: 'explicit decision', scope: { taskId: '410' },
     baseRevision: 9, timestamp: '2026-08-08T12:00:00.000Z',

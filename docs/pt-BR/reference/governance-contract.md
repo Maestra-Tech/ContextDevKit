@@ -21,6 +21,24 @@ off | shadow | canary | guarded
 
 Config ausente/inválida e falha interna degradam para `canary/continue`.
 
+## Mensagens visíveis
+
+Um gate só fala através da sua observação. A observação pode carregar
+`visibleMessage` e `problemKey`; o ponto de política copia ambos apenas para
+vereditos `warn` ou `deny`, nunca para `allow` ou `silent`. O runtime renderiza
+uma mensagem por sessão por `problemKey`.
+
+Produtores de observação no runtime:
+
+- `write-preflight` calcula `simulation` quando Edit/Write/MultiEdit/NotebookEdit
+  mira um caminho em `l5.highRiskPaths` ou `l5.contractGlobs`: `passed` se uma
+  predição em `memory/predictions/` cobre o caminho para a sessão atual (ou foi
+  escrita hoje); senão `violated`, com o caminho e o comando `mark-simulation.mjs`.
+  Fora das listas não há observação; o gate continua canary.
+- O contexto de sessão, compactação e handoff termina com o bloco `Owner guidance
+  (recommendation-only)`: preferências explícitas do owner e ponteiro para
+  `personalization.md`. Preferências inferidas nunca aparecem; o bloco não autoriza.
+
 ## Allowlist guarded
 
 Somente:

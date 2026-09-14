@@ -10,10 +10,38 @@
  */
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { PRD_REQUIRED_SECTIONS, SPEC_METHOD_SECTIONS } from './workflow/catalog.mjs';
+
+/**
+ * Phases whose leave-gate `advanceWorkflow` enforces by default (ADR-0165). The
+ * remaining phase checks below are advisory descriptions until a caller wires them.
+ */
+export const DOCUMENT_GATED_PHASES = Object.freeze(['prd', 'spec']);
+
+/** @param {string} heading @returns {string} regex-safe heading */
+function escapeHeading(heading) {
+  return heading.replace(/[.*+?^${}()|[\]\\/]/g, '\\$&');
+}
 
 /** A section header with no content beneath it (still the empty scaffold). */
 function sectionEmpty(text, heading) {
-  return new RegExp(`## ${heading}\\s*(?=\\r?\\n#{1,2}\\s|\\s*$)`, 'i').test(text);
+  return new RegExp(`## ${escapeHeading(heading)}\\s*(?=\\r?\\n#{1,2}\\s|\\s*$)`, 'i').test(text);
+}
+
+/** True when the document declares the `## heading` at all. */
+function sectionPresent(text, heading) {
+  return new RegExp(`^## ${escapeHeading(heading)}\\s*$`, 'im').test(text);
+}
+
+/**
+ * Names the required sections of a document that are absent or still empty.
+ *
+ * @param {string} text document content
+ * @param {readonly string[]} headings required `##` headings
+ * @returns {string[]} headings that block the phase
+ */
+export function missingSections(text, headings) {
+  return headings.filter((heading) => !sectionPresent(text, heading) || sectionEmpty(text, heading));
 }
 
 function read(dir, file) {
@@ -54,14 +82,16 @@ export function checkPhaseGaps(dir, phase, workflow = {}) {
   switch (phase) {
     case 'prd': {
       const prd = read(dir, 'prd.md');
-      if (!prd) missing.push('prd.md is missing');
-      else if (sectionEmpty(prd, 'Problem') || sectionEmpty(prd, 'Goals')) missing.push('prd.md: fill "## Problem" and "## Goals"');
+      if (!prd) { missing.push('prd.md is missing'); break; }
+      const gaps = missingSections(prd, PRD_REQUIRED_SECTIONS);
+      if (gaps.length > 0) missing.push(`prd.md: fill ${gaps.map((heading) => `"## ${heading}"`).join(', ')}`);
       break;
     }
     case 'spec': {
       const spec = read(dir, 'spec.md');
-      if (!spec) missing.push('spec.md is missing');
-      else if (sectionEmpty(spec, 'Proposed design') || sectionEmpty(spec, 'Test plan')) missing.push('spec.md: fill "## Proposed design" and "## Test plan"');
+      if (!spec) { missing.push('spec.md is missing'); break; }
+      const gaps = missingSections(spec, SPEC_METHOD_SECTIONS);
+      if (gaps.length > 0) missing.push(`spec.md: fill ${gaps.map((heading) => `"## ${heading}"`).join(', ')}`);
       break;
     }
     case 'adr':
