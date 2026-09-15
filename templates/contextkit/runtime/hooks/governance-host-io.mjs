@@ -189,6 +189,23 @@ export async function dispatchHostGovernanceEvent({
       governedContextText = `Workflow context ${normalizedPayload.workflowRef} could not be loaded: ${error?.message ?? error}`;
     }
   }
+  if (moment === 'write-preflight') {
+    // Impact analysis before writing a high-risk or contract path: the `simulation`
+    // gate only ever receives its observation from this seam. A failure here is
+    // advisory by construction — no observation means the gate stays silent.
+    try {
+      const { observeWriteRisk } = await import('./write-risk-observation.mjs');
+      const riskObservation = observeWriteRisk(root, normalizedPayload, env);
+      if (riskObservation) {
+        normalizedPayload.observations = {
+          ...(normalizedPayload.observations ?? {}),
+          simulation: riskObservation,
+        };
+      }
+    } catch {
+      /* risk observation is advisory; its absence never denies a write */
+    }
+  }
 
   const runtimeDispatch = dispatch
     ?? (await import('../governance/event-runtime.mjs')).dispatchGovernanceEvent;

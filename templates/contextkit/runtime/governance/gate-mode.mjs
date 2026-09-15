@@ -143,7 +143,7 @@ export function resolveGatePlan({ moment, payload = {}, root = process.cwd(), en
  *
  * @param {{gate:object,moment:string,observation?:object}} input evaluation input
  * @returns {{decision:'allow'|'silent'|'warn'|'deny',gateId:string,mode:string,
- *   overridden:boolean,reason:string}}
+ *   overridden:boolean,reason:string,visibleMessage?:string,problemKey?:string}}
  */
 export function evaluateGateObservation({ gate, moment, observation = {} }) {
   const gateId = gate?.id ?? gate?.gateId;
@@ -166,9 +166,9 @@ export function evaluateGateObservation({ gate, moment, observation = {} }) {
   }
   if (mode === 'shadow') return gateVerdict('silent', gateId, mode, false, `gate ${status}`);
   if (status === 'violated' && mode === 'guarded' && canGateDeny(gateId, moment, observation)) {
-    return gateVerdict('deny', gateId, mode, false, 'applicable deterministic violation');
+    return gateVerdict('deny', gateId, mode, false, 'applicable deterministic violation', observation);
   }
-  return gateVerdict('warn', gateId, mode, false, `gate ${status}; continuing`);
+  return gateVerdict('warn', gateId, mode, false, `gate ${status}; continuing`, observation);
 }
 
 /**
@@ -316,8 +316,20 @@ function fallbackResolution(gateId, warnings, reason) {
  * @param {string} mode canonical mode
  * @param {boolean} overridden whether a human override applied
  * @param {string} reason concise decision reason
+ * @param {object|null} [observation] domain observation; only its `visibleMessage`
+ *   and `problemKey` are copied, and only onto a warn/deny verdict, so a passing or
+ *   silent gate never leaks text and the runtime can render one deduplicated message
  * @returns {Readonly<object>} immutable gate verdict
  */
-function gateVerdict(decision, gateId, mode, overridden, reason) {
-  return Object.freeze({ decision, gateId, mode, overridden, reason });
+function gateVerdict(decision, gateId, mode, overridden, reason, observation = null) {
+  const verdict = { decision, gateId, mode, overridden, reason };
+  if ((decision === 'warn' || decision === 'deny') && observation && typeof observation === 'object') {
+    if (typeof observation.visibleMessage === 'string' && observation.visibleMessage.trim() !== '') {
+      verdict.visibleMessage = observation.visibleMessage.trim();
+    }
+    if (typeof observation.problemKey === 'string' && observation.problemKey.trim() !== '') {
+      verdict.problemKey = observation.problemKey.trim();
+    }
+  }
+  return Object.freeze(verdict);
 }

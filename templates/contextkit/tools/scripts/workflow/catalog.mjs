@@ -123,3 +123,28 @@ export function requiredContextFiles() {
 export function optionalContextFiles() {
   return ['reports/'];
 }
+
+/**
+ * Authored-document section vocabularies (ADR-0165). The PRD keeps its original
+ * seed; the SPEC seed carries the AI engineering method fields so a task reaches
+ * implementation with problem, behavior, invariants, data, interfaces, edge cases,
+ * acceptance criteria and expected tests already written down.
+ */
+export const PRD_SEED_SECTIONS = Object.freeze([
+  'Problem', 'Goals', 'Users / Jobs', 'Non-goals', 'Success metrics', 'Open questions',
+]);
+/** Sections that must be filled before `advanceWorkflow` may leave `prd`. */
+export const PRD_REQUIRED_SECTIONS = Object.freeze(['Problem', 'Goals']);
+/** Sections that must be filled before `advanceWorkflow` may leave `spec`. */
+export const SPEC_METHOD_SECTIONS = Object.freeze([
+  'Problem',
+  'Expected behavior',
+  'Domain rules and invariants',
+  'Data',
+  'Interfaces and contracts',
+  'Edge cases',
+  'Acceptance criteria',
+  'Expected tests',
+]);
+/** Full SPEC seed: the method fields plus the two planning sections kept from 4.0. */
+export const SPEC_SEED_SECTIONS = Object.freeze([...SPEC_METHOD_SECTIONS, 'Impact analysis', 'Development sequence']);

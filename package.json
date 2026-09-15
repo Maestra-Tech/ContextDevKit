@@ -1,6 +1,6 @@
 {
   "name": "contextdevkit",
-  "version": "4.0.5",
+  "version": "4.0.6",
   "description": "Host-agnostic AI software engineering governance harness with persistent project intelligence, adaptive evidence-driven engineering loops, durable work state, and long-term memory across coding agents.",
   "type": "module",
   "bin": {

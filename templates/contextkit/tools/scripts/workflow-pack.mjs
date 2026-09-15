@@ -24,8 +24,10 @@ import {
 } from './workflow/create.mjs';
 import { WORKFLOW_PHASES } from './workflow/catalog.mjs';
 import { readJsonSafe, writeJsonStable } from './workflow/io.mjs';
+import { parseProofOfDone } from './workflow/proof-of-done.mjs';
 import { renderWorkflowPack } from './workflow/render.mjs';
 import { assertValidPack, validatePack } from './workflow/validate.mjs';
+import { DOCUMENT_GATED_PHASES, checkPhaseGaps } from './workflow-gate.mjs';
 
 export { repairWorkflowScaffold };
 export const PHASES = [...WORKFLOW_PHASES];
@@ -421,6 +423,12 @@ export function advanceWorkflow(root, ref, evidenceRef = '', options = {}) {
   if (phaseIndex === PHASES.length - 1) {
     throw new Error('Workflow completion requires completeWorkflow with explicit QA evidence');
   }
+  if (options.force !== true && DOCUMENT_GATED_PHASES.includes(pack.state.phase)) {
+    const gaps = checkPhaseGaps(pack.dir, pack.state.phase, pack.definition);
+    if (gaps.length > 0) {
+      throw new Error(`Workflow phase ${pack.state.phase} cannot advance: ${gaps.join('; ')} (pass --force to override explicitly)`);
+    }
+  }
   const nextPhase = PHASES[phaseIndex + 1] ?? pack.state.phase;
   const now = options.now ?? new Date().toISOString();
   const next = {
@@ -460,8 +468,11 @@ export function completeWorkflow(root, ref, completion, options = {}) {
     throw new Error(`Workflow state CAS refused: expected revision ${options.expectedRevision}, found ${pack.state.revision}`);
   }
   if (pack.state.status === 'done') {
+    const sameReviewer = pack.state.qa?.reviewer === undefined
+      || pack.state.qa.reviewer === String(completion?.reviewer ?? '').trim();
     const sameReceipt = pack.state.qa?.status === completion?.qaStatus
       && pack.state.lastReportRef === completion?.reportRef
+      && sameReviewer
       && JSON.stringify(pack.state.qa?.evidenceRefs ?? []) === JSON.stringify(completion?.qaEvidenceRefs ?? []);
     if (!sameReceipt) throw new Error('Workflow is already done with different QA evidence');
     workflowDonePlacement(root, pack);
@@ -491,8 +502,23 @@ export function completeWorkflow(root, ref, completion, options = {}) {
   if (typeof completion.reportRef !== 'string' || !completion.reportRef.startsWith('reports/')) {
     throw new Error('Workflow completion requires a reportRef inside reports/');
   }
-  if (!pack.reports.some((report) => report.ref === completion.reportRef)) {
+  const completionReport = pack.reports.find((report) => report.ref === completion.reportRef);
+  if (!completionReport) {
     throw new Error(`Workflow completion report does not exist: ${completion.reportRef}`);
+  }
+  // ADR-0165: a second pair of eyes and a machine-readable proof of done are part of
+  // the completion receipt; neither can be inferred from a green QA status.
+  const reviewer = typeof completion.reviewer === 'string' ? completion.reviewer.trim() : '';
+  if (reviewer === '') {
+    throw new Error('Workflow completion requires a reviewer (--reviewer) distinct from the author');
+  }
+  const author = typeof completion.author === 'string' ? completion.author.trim() : '';
+  if (author !== '' && author.toLowerCase() === reviewer.toLowerCase()) {
+    throw new Error(`Workflow completion requires a reviewer different from the author "${author}"`);
+  }
+  const proofOfDone = parseProofOfDone(completionReport.content);
+  if (!proofOfDone.ok) {
+    throw new Error(`Workflow completion requires a complete proof-of-done block in ${completion.reportRef}: ${proofOfDone.errors.join('; ')}`);
   }
   const unfinishedTasks = pack.tasks.tasks.filter((task) => !['done', 'cancelled'].includes(task.status));
   if (unfinishedTasks.length > 0) {
@@ -513,6 +539,9 @@ export function completeWorkflow(root, ref, completion, options = {}) {
     qa: {
       status: completion.qaStatus,
       evidenceRefs: [...new Set(completion.qaEvidenceRefs.map((reference) => reference.trim()))],
+      reviewer,
+      ...(author !== '' ? { author } : {}),
+      proofOfDone: proofOfDone.items,
     },
     lastReportRef: completion.reportRef,
     startedAt: pack.state.startedAt ?? now,

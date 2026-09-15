@@ -76,6 +76,27 @@ Invalid JSON is surfaced for repair. Missing required scaffold is repaired only
 through the explicit v2 repair command; runtime has no automatic reader for
 retired plans, frontmatter state, physical stages, or path-based completion.
 
+## Authored documents
+
+A new workflow seeds `spec.md` with the method fields: Problem, Expected
+behavior, Domain rules and invariants, Data, Interfaces and contracts, Edge
+cases, Acceptance criteria, Expected tests, plus Impact analysis and Development
+sequence. `advance` refuses to leave `prd` while Problem or Goals are empty and
+refuses to leave `spec` while any of the eight method sections is absent or
+empty; the refusal names the sections. `--force` is the only override and it is
+explicit in the command line.
+
+## Completion receipt
+
+`complete` requires, besides the QA status and evidence, a `--reviewer` distinct
+from `--author` and a fenced ` ```proof-of-done ` block in the closeout report.
+The block lists the twelve items `typecheck, lint, affected-tests, regression,
+migrations, runtime-check, logs-sanitized, main-flow, edge-cases,
+acceptance-review, diff-review, architecture-review`, each as
+`<item>: passed <note>` or `<item>: skipped <reason>`. A missing item, a `failed`
+item, or a `skipped` without a reason refuses completion; nothing is inferred as
+passed. The parsed items and the reviewer persist in `workflow-state.json.qa`.
+
 ## State transitions
 
 Task state lives only in scoped `pipeline/tasks.json`. Workflow aggregate state

@@ -3,7 +3,7 @@
  * Focused integration checks for WF-0111 W03 single-process governance composition.
  */
 import assert from 'node:assert/strict';
-import { mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -15,6 +15,7 @@ import { dispatchPostflight } from '../templates/contextkit/runtime/hooks/govern
 import { dispatchCompletion } from '../templates/contextkit/runtime/hooks/governance-completion.mjs';
 import { loadGovernanceSessionContext } from '../templates/contextkit/runtime/hooks/governance-session-context.mjs';
 import { createWaveWorkflow } from '../templates/contextkit/tools/scripts/workflow/create.mjs';
+import { editOwnerPreference } from '../templates/contextkit/runtime/preferences/owner-preferences.mjs';
 import {
   emitGovernanceResult,
   normalizeGovernancePayload,
@@ -286,7 +287,80 @@ try {
   assert.equal(sessionContext.status, 'available');
   assert.match(sessionContext.contextPack, /### workflow\.json/);
   assert.match(sessionContext.contextPack, /### pipeline\/tasks\.json/);
+  assert.doesNotMatch(sessionContext.contextPack, /Owner guidance/);
   ok('session, compact, and handoff loader renders the governed pack read-only');
+
+  // ADR-0165 (G2): explicit owner preferences and the personalization pointer travel
+  // with every context event; inferred preferences and the seeded placeholder do not.
+  const preferencesDirectory = join(workflowContextRoot, 'contextkit', 'memory', 'preferences');
+  mkdirSync(preferencesDirectory, { recursive: true });
+  writeFileSync(join(preferencesDirectory, 'personalization.md'), '# Project personalization\n\n## Instructions\n\n### 1. Contexto antes de codigo\n\nLer CLAUDE.md primeiro.\n', 'utf8');
+  editOwnerPreference(workflowContextRoot, {
+    key: 'qa.gate-order', value: 'build > lint > typecheck > unit', source: 'explicit', confidence: 1,
+  }, { write: true, actor: 'owner' });
+  editOwnerPreference(workflowContextRoot, {
+    key: 'routing.inferred-only', value: 'never shown', source: 'inferred', confidence: 0.4,
+  }, { write: true, actor: 'system' });
+  const guidedContext = await loadGovernanceSessionContext(
+    { hook_event_name: 'SessionStart', workflow_ref: 'WF-0111' },
+    { root: workflowContextRoot, env: {} },
+  );
+  assert.match(guidedContext.contextPack, /## Owner guidance \(recommendation-only\)/);
+  assert.match(guidedContext.contextPack, /qa\.gate-order: build > lint > typecheck > unit/);
+  assert.match(guidedContext.contextPack, /personalization: `contextkit\/memory\/preferences\/personalization\.md`/);
+  assert.match(guidedContext.contextPack, /sections: Instructions · 1\. Contexto antes de codigo/);
+  assert.doesNotMatch(guidedContext.contextPack, /routing\.inferred-only/);
+  const guidanceOnly = await loadGovernanceSessionContext(
+    { hook_event_name: 'SessionStart' },
+    { root: workflowContextRoot, env: {} },
+  );
+  assert.equal(guidanceOnly.status, 'available');
+  assert.match(guidanceOnly.contextPack, /^## Owner guidance/);
+  ok('session context surfaces explicit owner preferences and the personalization pointer');
+
+  // ADR-0165 (G3): a write on a configured high-risk/contract path yields exactly one
+  // simulation observation with a visible message; a covering prediction silences it.
+  writeFileSync(join(workflowContextRoot, 'contextkit', 'config.json'), JSON.stringify({
+    level: 5,
+    l5: { highRiskPaths: ['supabase/migrations/'], contractGlobs: ['src/domain/**/*.ts'] },
+  }), 'utf8');
+  const observedCalls = [];
+  const riskDispatch = async (call) => {
+    observedCalls.push(call.payload.observations?.simulation ?? null);
+    return { status: 'completed', allowed: true, evaluations: [], messages: [], diagnostics: [] };
+  };
+  const riskOptions = { root: workflowContextRoot, env: { CLAUDE_SESSION_ID: 'risk-session' }, host: 'claude', dispatch: riskDispatch };
+  await dispatchWritePreflight({ tool_name: 'Edit', session_id: 'risk-session', tool_input: { file_path: 'supabase/migrations/0001_init.sql' } }, riskOptions);
+  await dispatchWritePreflight({ tool_name: 'Write', session_id: 'risk-session', tool_input: { file_path: join(workflowContextRoot, 'src', 'domain', 'patient', 'rules.ts') } }, riskOptions);
+  await dispatchWritePreflight({ tool_name: 'Edit', session_id: 'risk-session', tool_input: { file_path: 'README.md' } }, riskOptions);
+  await dispatchWritePreflight({ tool_name: 'Edit', session_id: 'risk-session', tool_input: { file_path: '../outside.sql' } }, riskOptions);
+  assert.equal(observedCalls[0]?.status, 'violated');
+  assert.equal(observedCalls[0]?.riskEntry, 'supabase/migrations/');
+  assert.match(observedCalls[0]?.visibleMessage ?? '', /mark-simulation\.mjs --write "<objective>" supabase\/migrations\/0001_init\.sql/);
+  assert.equal(observedCalls[0]?.problemKey, 'simulation:supabase/migrations/');
+  assert.equal(observedCalls[1]?.status, 'violated');
+  assert.equal(observedCalls[1]?.riskEntry, 'src/domain/**/*.ts');
+  assert.equal(observedCalls[2], null);
+  assert.equal(observedCalls[3], null);
+  ok('write preflight observes high-risk and contract paths, and only those');
+
+  const predictionsDirectory = join(workflowContextRoot, 'contextkit', 'memory', 'predictions');
+  mkdirSync(predictionsDirectory, { recursive: true });
+  writeFileSync(join(predictionsDirectory, '2020-01-01-risk-session-migrations.md'), [
+    '# Prediction — migrations',
+    '',
+    '- **Date**: 2020-01-01',
+    '- **Prediction ID**: 2020-01-01-risk-session-migrations',
+    '- **Source**: explicit `/simulate-impact` command',
+    '- **Covered paths**: supabase/migrations/',
+    '',
+  ].join('\n'), 'utf8');
+  await dispatchWritePreflight({ tool_name: 'Edit', session_id: 'risk-session', tool_input: { file_path: 'supabase/migrations/0002_next.sql' } }, riskOptions);
+  await dispatchWritePreflight({ tool_name: 'Edit', session_id: 'other-session', tool_input: { file_path: 'supabase/migrations/0002_next.sql' } }, { ...riskOptions, env: { CLAUDE_SESSION_ID: 'other-session' } });
+  assert.equal(observedCalls[4]?.status, 'passed');
+  assert.equal(observedCalls[4]?.predictionId, '2020-01-01-risk-session-migrations');
+  assert.equal(observedCalls[5]?.status, 'violated');
+  ok('a prediction covering the path for this session satisfies the simulation observation; another session\'s stale prediction does not');
 } finally {
   rmSync(workflowContextRoot, { recursive: true, force: true });
 }

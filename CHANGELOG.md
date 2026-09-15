@@ -22,6 +22,45 @@ this project follows [Semantic Versioning](https://semver.org/).
 
 _Add your changes here._
 
+## [4.0.6] - 2026-09-15
+
+> **The AI engineering method as runtime mechanism.** ContextDevKit 4.0.6 lets
+> gate verdicts speak, surfaces explicit owner preferences in every session
+> context, warns before a write on a high-risk or contract path without impact
+> analysis, seeds the SPEC with the method fields, and turns workflow completion
+> into a receipt with a distinct reviewer and a machine-readable proof of done.
+> No new guarded gate; every hot-path addition is canary and measured under 10 ms.
+> (ADR-0165, WF-0118)
+
+### Added (`feat`)
+
+- **`feat(governance)` — gate verdicts can speak.** `evaluateGateObservation`
+  copies an observation's `visibleMessage` and `problemKey` onto `warn`/`deny`
+  verdicts only, so the event runtime finally renders gate messages to the agent.
+  Passing, silent, and shadow verdicts never carry text. (ADR-0165, WF-0118)
+- **`feat(governance)` — impact analysis before writing a risky path.** Write
+  preflight produces the `simulation` observation when an Edit/Write/MultiEdit/
+  NotebookEdit targets `l5.highRiskPaths` or `l5.contractGlobs`; a prediction
+  from `mark-simulation.mjs` covering the path for the current session (or dated
+  today) satisfies it. Canary, never a block. New
+  `runtime/hooks/write-risk-observation.mjs`.
+- **`feat(context)` — owner guidance in session context.** SessionStart,
+  PreCompact, and SubagentStart context ends with an `Owner guidance
+  (recommendation-only)` block: explicit `owner-preferences.json` entries and a
+  pointer to `personalization.md` with its section headings. The preference store
+  had no runtime consumer until now.
+- **`feat(workflow)` — structured SPEC and document gates.** New workflows seed
+  `spec.md` with Problem, Expected behavior, Domain rules and invariants, Data,
+  Interfaces and contracts, Edge cases, Acceptance criteria, Expected tests,
+  Impact analysis, Development sequence. `advance` refuses to leave `prd`/`spec`
+  with empty required sections unless `--force`; the leave-gate in
+  `workflow-gate.mjs` is wired for the first time.
+- **`feat(workflow)` — completion receipt with reviewer and proof of done.**
+  `complete` requires `--reviewer` (distinct from `--author`) and a fenced
+  ` ```proof-of-done ` block of twelve `passed|skipped <reason>` items in the
+  closeout report; both persist in `workflow-state.json.qa`. New
+  `tools/scripts/workflow/proof-of-done.mjs`.
+
 ## [4.0.5] - 2026-08-11
 
 > **Governed CompozyOS active execution.** ContextDevKit 4.0.5 promotes a
