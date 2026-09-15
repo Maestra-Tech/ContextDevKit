@@ -20,6 +20,18 @@ this project follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+_Add your changes here._
+
+## [4.0.6] - 2026-09-15
+
+> **The AI engineering method as runtime mechanism.** ContextDevKit 4.0.6 lets
+> gate verdicts speak, surfaces explicit owner preferences in every session
+> context, warns before a write on a high-risk or contract path without impact
+> analysis, seeds the SPEC with the method fields, and turns workflow completion
+> into a receipt with a distinct reviewer and a machine-readable proof of done.
+> No new guarded gate; every hot-path addition is canary and measured under 10 ms.
+> (ADR-0165, WF-0118)
+
 ### Added (`feat`)
 
 - **`feat(governance)` — gate verdicts can speak.** `evaluateGateObservation`
